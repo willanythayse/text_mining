@@ -1,0 +1,142 @@
+---
+title: "Text Mining"
+subtitle: "Análise TF-IDF"
+author: "Prof.Gustavo Mirapalheta"
+output:
+  ioslides_presentation:
+    incremental: no
+    mouse_click_enabled: yes
+    widescreen: yes
+  beamer_presentation: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Análise TF-IDF
+
+- TF-IDF: Term Frequency-Inverse Document Frequency
+   + TF: aumenta o peso de palavras muito utilizadas. Vamos utilizar uma alternativa ao uso das *stop words*
+   + IDF: diminui o peso de palavras comumente utilizadas e aumenta o peso de palavras que não são muito utilizadas em uma coleção de documentos
+   + TF-IDF: Multiplica os dois fatores calculando a frequência de uso ponderada por qual raro o termo é utilizado.
+   + A estatística IDF é calculada como: IDF(termo)=LN(Ndocs/Ndocs que contém o termo)
+   
+## Term Frequency em Jane Austen
+
+- Carga de bibliotecas no R
+
+```{r}
+library(dplyr)
+library(janeaustenr)
+library(tidytext)
+```
+
+## Term Frequency em Jane Austen
+
+- Número de palavras por livro
+
+```{r}
+book_words <- austen_books() %>% unnest_tokens(word, text) %>%
+count(book, word, sort = TRUE) %>% ungroup()
+head(book_words)
+```
+
+## Term Frequency em Jane Austen
+
+- Total de palavras por livro
+
+```{r}
+total_words <- book_words %>% group_by(book) %>%
+summarize(total = sum(n))
+head(total_words)
+```
+
+## Term Frequency em Jane Austen
+
+- Total de palavras e palavras totais por livro
+
+```{r, message=FALSE, warning=FALSE}
+book_words <- left_join(book_words, total_words)
+head(book_words)
+```
+
+## Term Frequency em Jane Austen
+
+- Vamos analisar a frequência dos termos em Jane Austen
+
+```{r, message=FALSE, warning=FALSE}
+library(ggplot2); ggplot(book_words, aes(n/total, fill = book)) + geom_histogram(show.legend = FALSE) + xlim(NA, 0.0009) +
+facet_wrap(~book, ncol = 2, scales = "free_y")
+```
+
+## Term Frequency em Jane Austen - Lei de Zipf
+
+- Observando os gráficos anteriores podemos observar que os termos muito comuns como "the", "a", "do", etc... levam a chamada lei de Zipf: 
+   + A frequência com que uma palavra aparece é inversamente proporcional ao seu ranking (de importância).
+   
+## Term Frequency em Jane Austen   
+   
+- Lei de Zipf: observação em um tibble
+
+```{r}
+freq_by_rank <- book_words %>% group_by(book) %>%
+mutate(rank = row_number(), `term frequency` = n/total)
+head(freq_by_rank)
+```
+
+## Term Frequency em Jane Austen   
+
+- Lei de Zipf: observação em um gráfico em escala logarítmica
+
+```{r}
+freq_by_rank %>% ggplot(aes(rank, `term frequency`, color = book)) +
+geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + scale_x_log10() + scale_y_log10()
+```
+
+## Term Frequency em Jane Austen   
+
+- Vamos realizar uma regressão exponencial e calcular o expoente da curva acima para o meio da distribuição.
+
+```{r}
+rank_subset <- freq_by_rank %>% filter(rank < 500, rank > 10)
+lm(log10(`term frequency`) ~ log10(rank), data = rank_subset)
+```
+
+## Term Frequency em Jane Austen   
+
+- A lei de Zipf clássica diz que o coeficiente deveria ser -1 (pois a relação teórica seria inversamente proporcial, i.e. freq x 1/rank). Fazendo um gráfico com o coeficiente de regressão igual a -1:
+
+```{r}
+freq_by_rank %>% ggplot(aes(rank, `term frequency`, color = book)) +
+geom_abline(intercept = -0.62, slope = -1.1, color = "gray50", linetype = 2) + geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + scale_x_log10() + scale_y_log10()
+```
+
+## A Análise TF-IDF: função *bind_tf_idf*
+
+- Vamos calcular a estatística TF-IDF para Jane Austen
+
+```{r}
+book_words <- book_words %>% bind_tf_idf(word, book, n)
+head(book_words)
+```
+
+## A Análise TF-IDF em Jane Austen
+
+- Quais palavras tem uma estatística TF-IDF alta?
+
+```{r}
+book_words %>% select(-total) %>% arrange(desc(tf_idf))
+```
+
+## A Análise TF-IDF em Jane Austen
+
+- Vamos observar esta estatística em forma gráfica:
+
+```{r, message=FALSE, warning=FALSE}
+book_words %>% arrange(desc(tf_idf)) %>%
+mutate(word = factor(word, levels = rev(unique(word)))) %>%
+group_by(book) %>% top_n(15) %>% ungroup %>%
+ggplot(aes(word, tf_idf, fill = book)) + geom_col(show.legend = FALSE) + labs(x = NULL, y = "tf-idf") + facet_wrap(~book, ncol = 2, scales = "free") + coord_flip()
+```
+
